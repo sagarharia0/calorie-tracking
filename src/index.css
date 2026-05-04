@@ -1,0 +1,20 @@
+@import './styles/macro.css';
+
+/* Lock the document to exactly the viewport height so .scroll containers
+ * scroll internally and the TabBar stays pinned to the bottom of the viewport.
+ * 100dvh adjusts for mobile browser chrome (address bar) better than 100vh. */
+html, body, #root {
+  margin: 0;
+  height: 100dvh;
+}
+
+body {
+  background: var(--bg);
+  color-scheme: light;
+  overflow: hidden;
+}
+
+#root {
+  display: flex;
+  flex-direction: column;
+}

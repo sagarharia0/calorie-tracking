@@ -1,0 +1,19 @@
+{
+  "name": "Macro — calorie & macro tracker",
+  "short_name": "Macro",
+  "description": "Personal calorie and macronutrient tracker with AI-assisted swap suggestions.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#fbf8ed",
+  "theme_color": "#21252c",
+  "icons": [
+    {
+      "src": "/logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
