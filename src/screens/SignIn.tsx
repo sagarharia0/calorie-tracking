@@ -1,7 +1,9 @@
 import { useState } from 'react'
 import { signInWithGoogle } from '../lib/auth'
+import { useAuth } from '../contexts/AuthContext'
 
 export default function SignIn() {
+  const { redirectError } = useAuth()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -9,12 +11,16 @@ export default function SignIn() {
     setBusy(true)
     setError(null)
     try {
+      // Returns a Promise<never> for redirect — the page navigates away before
+      // it resolves. busy stays true until the page is replaced by Google.
       await signInWithGoogle()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Sign in failed')
       setBusy(false)
     }
   }
+
+  const visibleError = error ?? redirectError
 
   return (
     <div className="app" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
@@ -33,9 +39,9 @@ export default function SignIn() {
         >
           {busy ? 'Opening Google…' : 'Sign in with Google'}
         </button>
-        {error && (
+        {visibleError && (
           <div style={{ fontSize: 12, color: 'var(--danger)', marginTop: 12 }}>
-            {error}
+            {visibleError}
           </div>
         )}
       </div>

@@ -4,6 +4,8 @@ import Home from './screens/Home'
 import Day from './screens/Day'
 import AddMeal from './screens/AddMeal'
 import Goals from './screens/Goals'
+import GoalsEdit from './screens/GoalsEdit'
+import Settings from './screens/Settings'
 import Labels from './screens/Labels'
 import Insights from './screens/Insights'
 import Scanner from './screens/Scanner'
@@ -47,7 +49,10 @@ export function AppRoutes() {
       <Route path="/" element={<Home />} />
       <Route path="/day/:date" element={<Day />} />
       <Route path="/day/:date/add" element={<AddMeal />} />
+      <Route path="/day/:date/meal/:mealId/edit" element={<AddMeal />} />
+      <Route path="/settings" element={<Settings />} />
       <Route path="/goals" element={<Goals />} />
+      <Route path="/goals/edit" element={<GoalsEdit />} />
       <Route path="/labels" element={<Labels />} />
       <Route path="/insights" element={<Insights />} />
       <Route path="/scanner" element={<Scanner />} />

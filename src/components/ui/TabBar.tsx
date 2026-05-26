@@ -1,19 +1,23 @@
 import { useNavigate, useLocation } from 'react-router-dom'
 import { Icon, type IconName } from './Icon'
 
-type TabId = 'home' | 'insights' | 'labels' | 'settings'
+type TabId = 'home' | 'insights' | 'foods' | 'settings'
 
 const TABS: { id: TabId; label: string; ic: IconName; path: string }[] = [
   { id: 'home', label: 'Today', ic: 'home', path: '/' },
   { id: 'insights', label: 'Insights', ic: 'chart', path: '/insights' },
-  { id: 'labels', label: 'Labels', ic: 'tag', path: '/labels' },
-  { id: 'settings', label: 'Goals', ic: 'gear', path: '/goals' },
+  { id: 'foods', label: 'Foods', ic: 'sparkle', path: '/good-foods' },
+  { id: 'settings', label: 'Settings', ic: 'gear', path: '/settings' },
 ]
 
 function activeFromPath(pathname: string): TabId {
   if (pathname.startsWith('/insights')) return 'insights'
-  if (pathname.startsWith('/labels')) return 'labels'
-  if (pathname.startsWith('/goals')) return 'settings'
+  if (pathname.startsWith('/good-foods')) return 'foods'
+  if (
+    pathname.startsWith('/settings') ||
+    pathname.startsWith('/goals') ||
+    pathname.startsWith('/labels')
+  ) return 'settings'
   return 'home'
 }
 

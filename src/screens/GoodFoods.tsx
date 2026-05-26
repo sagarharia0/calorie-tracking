@@ -30,7 +30,7 @@ type SuggestState =
   | { phase: 'error'; message: string }
 
 export default function GoodFoods() {
-  const { user } = useAuth()
+  const { user, diet } = useAuth()
   const navigate = useNavigate()
   const today = todayKey()
   const { day } = useDay(today)
@@ -89,6 +89,7 @@ export default function GoodFoods() {
         remainingKcal,
         goalGrams,
         preferKind: tab,
+        ...(diet ? { diet } : {}),
       })
       setSuggestState({ phase: 'ok', suggestions: res.suggestions })
     } catch (err) {

@@ -8,11 +8,18 @@ export type DateKey = string // 'YYYY-MM-DD'
 
 // ─── User ───────────────────────────────────────────────────────
 
+// Dietary preference. Filters LLM-generated suggestions (swap, suggestFoods,
+// insightSummary). undefined = no restriction. Filters "flesh-only" — i.e.
+// vegetarian excludes meat/poultry/fish as primary ingredients but tolerates
+// trace gelatin/rennet/anchovies in condiments. See functions prompt code.
+export type Diet = 'vegetarian' | 'vegan' | 'pescatarian'
+
 export type User = {
   email: string | null
   displayName: string | null
   photoURL: string | null
   createdAt: Timestamp
+  diet?: Diet
 }
 
 // ─── Goal (period-based, time-series) ───────────────────────────

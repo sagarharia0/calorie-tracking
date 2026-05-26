@@ -4,10 +4,7 @@ import { Icon, type IconName } from '../components/ui/Icon'
 import { Screen } from '../components/ui/Screen'
 import { TabBar } from '../components/ui/TabBar'
 import { useAuth } from '../contexts/AuthContext'
-import { useDay } from '../hooks/useDay'
 import { addLabel, archiveLabel, subscribeToLabels } from '../lib/repo/labels'
-import { ensureDay, setDayLabels } from '../lib/repo/days'
-import { todayKey } from '../lib/dateKey'
 import type { Label, LabelColor } from '../types/firestore'
 
 const COLORS: Record<LabelColor, { bg: string; fg: string }> = {
@@ -27,8 +24,6 @@ const ICON_OPTIONS: IconName[] = [
 export default function Labels() {
   const { user } = useAuth()
   const navigate = useNavigate()
-  const today = todayKey()
-  const { day } = useDay(today)
 
   const [labels, setLabels] = useState<Label[] | null>(null)
   const [showCreate, setShowCreate] = useState(false)
@@ -39,18 +34,6 @@ export default function Labels() {
   }, [user])
 
   const activeLabels = (labels ?? []).filter((l) => !l.archived)
-  const todayLabelIds = day?.labelIds ?? []
-  const todayActive = activeLabels.filter((l) => todayLabelIds.includes(l.id))
-  const todayInactive = activeLabels.filter((l) => !todayLabelIds.includes(l.id))
-
-  const onToggleToday = async (labelId: string) => {
-    if (!user) return
-    await ensureDay(user.uid, today)
-    const next = todayLabelIds.includes(labelId)
-      ? todayLabelIds.filter((id) => id !== labelId)
-      : [...todayLabelIds, labelId]
-    await setDayLabels(user.uid, today, next)
-  }
 
   const onCreate = async (name: string, icon: IconName, color: LabelColor) => {
     if (!user) return
@@ -68,7 +51,7 @@ export default function Labels() {
       <div className="appbar">
         <button
           className="pill"
-          onClick={() => navigate(-1)}
+          onClick={() => navigate('/settings')}
           style={{ border: 0, height: 32, padding: '0 8px', background: 'transparent', cursor: 'pointer' }}
         >
           <Icon name="back" size={18} />
@@ -98,33 +81,17 @@ export default function Labels() {
         )}
 
         <p className="muted" style={{ fontSize: 13, margin: '4px 4px 14px', lineHeight: 1.45 }}>
-          Tag your day to find patterns. Tap a label below to apply it to today.
+          Tag days with context to find patterns. Apply labels from the Home or Day screens.
         </p>
-
-        <div className="card" style={{ marginBottom: 16, padding: 16 }}>
-          <div className="section-title" style={{ marginBottom: 10 }}>Today</div>
-          {activeLabels.length === 0 ? (
-            <div className="muted" style={{ fontSize: 13, fontWeight: 500 }}>
-              No labels yet. Tap "New" above to create one.
-            </div>
-          ) : (
-            <div className="row gap-6" style={{ flexWrap: 'wrap' }}>
-              {todayActive.map((l) => (
-                <LabelChip key={l.id} l={l} onClick={() => onToggleToday(l.id)} active />
-              ))}
-              {todayInactive.map((l) => (
-                <LabelChip key={l.id} l={l} onClick={() => onToggleToday(l.id)} />
-              ))}
-            </div>
-          )}
-        </div>
 
         <div className="section-title" style={{ padding: '4px 4px 8px' }}>All labels</div>
         {labels === null ? (
           <div className="muted" style={{ fontSize: 13, padding: '8px 4px' }}>Loading…</div>
         ) : activeLabels.length === 0 ? (
           <div className="card" style={{ padding: 14 }}>
-            <div className="muted" style={{ fontSize: 13, fontWeight: 500 }}>No labels yet.</div>
+            <div className="muted" style={{ fontSize: 13, fontWeight: 500 }}>
+              No labels yet. Tap "New" above to create one.
+            </div>
           </div>
         ) : (
           <div className="col gap-10">
@@ -137,28 +104,6 @@ export default function Labels() {
 
       <TabBar />
     </Screen>
-  )
-}
-
-function LabelChip({ l, onClick, active }: { l: Label; onClick: () => void; active?: boolean }) {
-  const c = COLORS[l.color]
-  return (
-    <button
-      onClick={onClick}
-      className="pill"
-      style={{
-        border: 0,
-        background: active ? c.bg : 'var(--surface-2)',
-        color: active ? c.fg : 'var(--ink-2)',
-        height: 30,
-        cursor: 'pointer',
-        fontWeight: active ? 700 : 600,
-      }}
-    >
-      <Icon name={l.icon as IconName} size={13} color={active ? c.fg : 'var(--ink-2)'} />
-      {l.name}
-      {active && <Icon name="check" size={12} color={c.fg} />}
-    </button>
   )
 }
 

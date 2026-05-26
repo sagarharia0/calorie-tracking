@@ -38,3 +38,4 @@ functions/lib
 *.njsproj
 *.sln
 *.sw?
+MULTI_TENANT_PLAN.md

@@ -19,3 +19,26 @@ export function addDays(key: DateKey, n: number): DateKey {
   d.setDate(d.getDate() + n)
   return dateKey(d)
 }
+
+// Display formatters. en-GB locale gives the British "Sun, 4 May" / "Sunday, 4 May"
+// ordering (day before month) — matches the design and what the user expects.
+// URLs and stored DateKey values stay YYYY-MM-DD; these helpers are for UI only.
+const SHORT_DATE_FMT = new Intl.DateTimeFormat('en-GB', {
+  weekday: 'short',
+  day: 'numeric',
+  month: 'short',
+})
+
+const LONG_DATE_FMT = new Intl.DateTimeFormat('en-GB', {
+  weekday: 'long',
+  day: 'numeric',
+  month: 'short',
+})
+
+export function formatShortDate(input: DateKey | Date): string {
+  return SHORT_DATE_FMT.format(typeof input === 'string' ? parseKey(input) : input)
+}
+
+export function formatLongDate(input: DateKey | Date): string {
+  return LONG_DATE_FMT.format(typeof input === 'string' ? parseKey(input) : input)
+}

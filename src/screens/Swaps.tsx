@@ -21,7 +21,7 @@ type LoadState =
 export default function Swaps() {
   const { date, mealId, itemIdx } = useParams()
   const navigate = useNavigate()
-  const { user } = useAuth()
+  const { user, diet } = useAuth()
   const { day, meals, loading: dayLoading } = useDay(date)
   const { goal } = useActiveGoal(date)
 
@@ -59,6 +59,7 @@ export default function Swaps() {
       },
       mealType: meal.type,
       dailyContext: { remainingKcal, goalGrams },
+      ...(diet ? { diet } : {}),
     })
       .then((res) => {
         if (!cancelled) setState({ phase: 'ok', swaps: res.swaps })
@@ -76,7 +77,7 @@ export default function Swaps() {
     return () => {
       cancelled = true
     }
-  }, [item?.name, item?.kcal, item?.c_g, item?.p_g, item?.f_g, meal?.id, dayLoading, goal?.id])
+  }, [item?.name, item?.kcal, item?.c_g, item?.p_g, item?.f_g, meal?.id, dayLoading, goal?.id, diet])
 
   const onAccept = async (sIdx: number, swap: SwapSuggestion) => {
     if (!user || savedIdxs.has(sIdx) || savingIdx !== null) return
@@ -215,6 +216,7 @@ export default function Swaps() {
                     },
                     mealType: meal.type,
                     dailyContext: { remainingKcal, goalGrams },
+                    ...(diet ? { diet } : {}),
                   })
                     .then((res) => setState({ phase: 'ok', swaps: res.swaps }))
                     .catch((err) =>

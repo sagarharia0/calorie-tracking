@@ -2,6 +2,8 @@ import { onCall, HttpsError } from 'firebase-functions/v2/https'
 import { defineSecret } from 'firebase-functions/params'
 import { logger } from 'firebase-functions/v2'
 import Anthropic from '@anthropic-ai/sdk'
+import { requireAllowedUser } from './auth'
+import { dietSystemSuffix, type Diet } from './diet'
 
 const ANTHROPIC_API_KEY = defineSecret('ANTHROPIC_API_KEY')
 
@@ -30,6 +32,7 @@ type DaySummary = {
 type InsightSummaryInput = {
   days: DaySummary[]
   goal: { kcal: number; c_g: number; p_g: number; f_g: number; weeklyUnitsTarget?: number }
+  diet?: Diet
 }
 
 type SwapOpportunity = {
@@ -130,9 +133,7 @@ export const insightSummary = onCall(
     memory: '512MiB',
   },
   async (request): Promise<InsightSummaryOutput> => {
-    if (!request.auth) {
-      throw new HttpsError('unauthenticated', 'Sign in required.')
-    }
+    requireAllowedUser(request)
 
     const input = request.data as InsightSummaryInput
     if (!input?.days || !Array.isArray(input.days)) {
@@ -146,7 +147,7 @@ export const insightSummary = onCall(
       response = await client.messages.create({
         model: 'claude-opus-4-7',
         max_tokens: 1500,
-        system: SYSTEM_PROMPT,
+        system: SYSTEM_PROMPT + dietSystemSuffix(input.diet),
         tools: [SUMMARIZE_TOOL],
         tool_choice: { type: 'tool', name: 'summarize_week' },
         messages: [{ role: 'user', content: buildUserPrompt(input) }],

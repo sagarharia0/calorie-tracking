@@ -26,15 +26,18 @@ export function FoodPicker({
   const { user } = useAuth()
   const [results, setResults] = useState<Food[]>([])
   const [loading, setLoading] = useState(false)
+  const [searchError, setSearchError] = useState(false)
 
   useEffect(() => {
     if (!user || !open) {
       setResults([])
       setLoading(false)
+      setSearchError(false)
       return
     }
     let cancelled = false
     setLoading(true)
+    setSearchError(false)
     const q = query.trim()
     const t = setTimeout(async () => {
       try {
@@ -42,8 +45,9 @@ export function FoodPicker({
           ? await listRecentFoods(user.uid, 6)
           : await searchFoodsByPrefix(user.uid, q, 8)
         if (!cancelled) setResults(list)
-      } catch {
-        if (!cancelled) setResults([])
+      } catch (err) {
+        console.error('[FoodPicker] search failed:', err)
+        if (!cancelled) { setResults([]); setSearchError(true) }
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -58,8 +62,10 @@ export function FoodPicker({
 
   const isRecents = query.trim().length === 0
   const showEmpty = !loading && results.length === 0 && isRecents
+  const showNoMatches = !loading && !searchError && results.length === 0 && !isRecents
+  const showSearchError = !loading && searchError && !isRecents
 
-  if (!showEmpty && results.length === 0) return null
+  if (!showEmpty && !showNoMatches && !showSearchError && results.length === 0) return null
 
   return (
     <div className="col gap-6" style={{ marginTop: 10 }}>
@@ -79,7 +85,21 @@ export function FoodPicker({
           className="muted"
           style={{ fontSize: 12, fontWeight: 500, padding: '4px 2px', lineHeight: 1.45 }}
         >
-          No saved foods yet. Fill the row, toggle "Save as food", and your library starts here.
+          No saved foods yet. Fill the row and your library starts here.
+        </div>
+      ) : showNoMatches ? (
+        <div
+          className="muted"
+          style={{ fontSize: 12, fontWeight: 500, padding: '4px 2px' }}
+        >
+          No matches in your library.
+        </div>
+      ) : showSearchError ? (
+        <div
+          className="muted"
+          style={{ fontSize: 12, fontWeight: 500, padding: '4px 2px' }}
+        >
+          Search unavailable — check console for details.
         </div>
       ) : (
         <div className="col gap-6">

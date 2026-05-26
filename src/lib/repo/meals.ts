@@ -46,6 +46,45 @@ export async function addMeal(
   return newMealRef.id
 }
 
+export async function getMeal(
+  uid: string,
+  dateKey: DateKey,
+  id: string,
+): Promise<Meal | null> {
+  const snap = await getDoc(mealRef(uid, dateKey, id))
+  if (!snap.exists()) return null
+  return { id: snap.id, ...(snap.data() as Omit<Meal, 'id'>) }
+}
+
+// Edit an existing meal: writes the new meal payload and applies the macro
+// delta to the cached day totals atomically. Reads the old meal first so the
+// delta is computed without trusting the caller — safer than passing the diff
+// in from the form.
+export async function updateMeal(
+  uid: string,
+  dateKey: DateKey,
+  id: string,
+  next: Omit<Meal, 'id'>,
+): Promise<void> {
+  const ref = mealRef(uid, dateKey, id)
+  const snap = await getDoc(ref)
+  if (!snap.exists()) throw new Error('Meal not found')
+  const prev = snap.data() as Omit<Meal, 'id'>
+  const prevAlcohol = prev.alcohol_g ?? 0
+  const nextAlcohol = next.alcohol_g ?? 0
+  const batch = writeBatch(db)
+  batch.set(ref, next)
+  batch.update(dayRef(uid, dateKey), {
+    'totals.kcal': increment(next.kcal - prev.kcal),
+    'totals.c_g': increment(next.c_g - prev.c_g),
+    'totals.p_g': increment(next.p_g - prev.p_g),
+    'totals.f_g': increment(next.f_g - prev.f_g),
+    'totals.alcohol_g': increment(nextAlcohol - prevAlcohol),
+    'totals.units': increment((nextAlcohol - prevAlcohol) / G_PER_UNIT),
+  })
+  await batch.commit()
+}
+
 export async function deleteMeal(uid: string, dateKey: DateKey, id: string): Promise<void> {
   const ref = mealRef(uid, dateKey, id)
   const snap = await getDoc(ref)

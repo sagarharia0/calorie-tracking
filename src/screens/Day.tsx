@@ -1,27 +1,17 @@
-import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Icon, type IconName } from '../components/ui/Icon'
 import { MacroBar } from '../components/ui/MacroBar'
 import { StackBar } from '../components/ui/StackBar'
 import { Screen } from '../components/ui/Screen'
 import { FlagChip } from '../components/ui/SwapBits'
+import { DayLabelsPicker } from '../components/forms/DayLabelsPicker'
 import { flagItem } from '../lib/flags'
-import { useAuth } from '../contexts/AuthContext'
 import { useDay } from '../hooks/useDay'
 import { useActiveGoal } from '../hooks/useActiveGoal'
-import { todayKey, parseKey, addDays } from '../lib/dateKey'
+import { todayKey, addDays, formatShortDate, formatLongDate } from '../lib/dateKey'
 import { gramsFromGoal } from '../lib/macros'
-import { deleteMeal } from '../lib/repo/meals'
 import type { Meal } from '../types/firestore'
 
-const WEEKDAY_LONG = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
-const WEEKDAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-
-function shortDate(key: string) {
-  const d = parseKey(key)
-  return `${WEEKDAY_SHORT[d.getDay()]}, ${MONTH_SHORT[d.getMonth()]} ${d.getDate()}`
-}
 
 export default function Day() {
   const { date } = useParams()
@@ -37,8 +27,7 @@ export default function Day() {
     : { c_g: 250, p_g: 160, f_g: 70 }
   const consumed = day?.totals ?? { kcal: 0, c_g: 0, p_g: 0, f_g: 0 }
 
-  const dateObj = parseKey(dateKey)
-  const titleLong = `${WEEKDAY_LONG[dateObj.getDay()]}, ${MONTH_SHORT[dateObj.getMonth()]} ${dateObj.getDate()}`
+  const titleLong = formatLongDate(dateKey)
   const isToday = dateKey === todayKey()
   const prevDate = addDays(dateKey, -1)
   const nextDate = addDays(dateKey, 1)
@@ -51,20 +40,30 @@ export default function Day() {
       <div className="appbar">
         <button
           className="pill"
-          onClick={() => navigate(-1)}
-          style={{ border: 0, height: 32, padding: '0 8px', background: 'transparent', cursor: 'pointer' }}
+          onClick={() => navigate('/')}
+          aria-label="Home"
+          style={{
+            border: 0,
+            height: 32,
+            width: 32,
+            padding: 0,
+            background: 'transparent',
+            cursor: 'pointer',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
         >
-          <Icon name="back" size={18} />
+          <Icon name="home" size={18} />
         </button>
         <div className="col aic" style={{ textAlign: 'center' }}>
           <div style={{ fontSize: 16, fontWeight: 700 }}>{titleLong}</div>
           <div style={{ fontSize: 11, color: 'var(--ink-3)', fontWeight: 600 }}>
-            {isToday ? 'Today' : shortDate(dateKey)}
+            {isToday ? 'Today' : formatShortDate(dateKey)}
           </div>
         </div>
-        <button className="pill" style={{ border: 0, height: 32, padding: '0 8px', background: 'transparent', cursor: 'pointer' }}>
-          <Icon name="more" size={18} />
-        </button>
+        {/* Spacer keeps the title visually centred against the back button. */}
+        <div style={{ width: 32 }} />
       </div>
 
       <div className="scroll" style={{ flex: 1, padding: '8px 18px 90px' }}>
@@ -74,15 +73,31 @@ export default function Day() {
             className="row gap-6 aic"
             style={{ border: 0, background: 'transparent', color: 'var(--ink-3)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}
           >
-            <Icon name="back" size={14} /> {shortDate(prevDate)}
+            <Icon name="back" size={14} /> {formatShortDate(prevDate)}
           </button>
           <button
             onClick={() => navigate(`/day/${nextDate}`)}
             className="row gap-6 aic"
             style={{ border: 0, background: 'transparent', color: 'var(--ink-4)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}
           >
-            {shortDate(nextDate)} <Icon name="forward" size={14} />
+            {formatShortDate(nextDate)} <Icon name="forward" size={14} />
           </button>
+        </div>
+
+        <div className="card" style={{ marginBottom: 14, padding: 14 }}>
+          <div
+            className="muted"
+            style={{
+              fontSize: 10.5,
+              fontWeight: 700,
+              letterSpacing: '0.06em',
+              textTransform: 'uppercase',
+              marginBottom: 10,
+            }}
+          >
+            Labels
+          </div>
+          <DayLabelsPicker dateKey={dateKey} appliedIds={day?.labelIds ?? []} />
         </div>
 
         <div className="card" style={{ marginBottom: 14 }}>
@@ -116,13 +131,6 @@ export default function Day() {
           </div>
         </div>
 
-        <div className="section-title" style={{ padding: '8px 4px' }}>Context</div>
-        <div className="row gap-6" style={{ marginBottom: 14, flexWrap: 'wrap' }}>
-          <span className="pill" style={{ background: 'var(--surface-2)' }}>
-            <Icon name="plus" size={12} /> Add label
-          </span>
-        </div>
-
         <div className="section-title" style={{ padding: '8px 4px' }}>Timeline</div>
         {meals.length === 0 ? (
           <div className="card" style={{ padding: 18, textAlign: 'center' }}>
@@ -139,13 +147,22 @@ export default function Day() {
         )}
 
         <div style={{ height: 12 }} />
-        <button
-          className="btn"
-          onClick={() => navigate(`/day/${dateKey}/add`)}
-          style={{ cursor: 'pointer' }}
-        >
-          <Icon name="plus" size={16} color="#fff" /> Log a meal
-        </button>
+        <div className="row gap-8">
+          <button
+            className="btn"
+            onClick={() => navigate(`/day/${dateKey}/add`)}
+            style={{ cursor: 'pointer', flex: 1 }}
+          >
+            <Icon name="plus" size={16} color="#fff" /> Log a meal
+          </button>
+          <button
+            className="btn"
+            onClick={() => navigate('/scanner', { state: { dateKey } })}
+            style={{ cursor: 'pointer', flex: 1 }}
+          >
+            <Icon name="barcode" size={16} color="#fff" /> Scan barcode
+          </button>
+        </div>
       </div>
     </Screen>
   )
@@ -157,23 +174,9 @@ function Timeline({ m, dateKey, last }: { m: Meal; dateKey: string; last: boolea
     ? m.time.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     : '—'
   const navigate = useNavigate()
-  const { user } = useAuth()
-  const [deleting, setDeleting] = useState(false)
-
-  const onDelete = async () => {
-    if (!user || deleting) return
-    if (!window.confirm(`Delete this ${m.type} (${m.kcal} kcal)?`)) return
-    setDeleting(true)
-    try {
-      await deleteMeal(user.uid, dateKey, m.id)
-    } catch (err) {
-      window.alert(`Failed to delete: ${err instanceof Error ? err.message : 'unknown'}`)
-      setDeleting(false)
-    }
-  }
 
   return (
-    <div style={{ padding: '14px 16px', borderBottom: last ? 'none' : '1px solid var(--hairline)', opacity: deleting ? 0.5 : 1 }}>
+    <div style={{ padding: '14px 16px', borderBottom: last ? 'none' : '1px solid var(--hairline)' }}>
       <div className="row spread aic" style={{ marginBottom: 8, gap: 8 }}>
         <div className="row gap-10 aic" style={{ minWidth: 0 }}>
           <div
@@ -197,10 +200,8 @@ function Timeline({ m, dateKey, last }: { m: Meal; dateKey: string; last: boolea
             {m.kcal} <span className="muted" style={{ fontSize: 11.5, fontWeight: 600 }}>kcal</span>
           </div>
           <button
-            onClick={onDelete}
-            disabled={deleting}
-            aria-label="Delete meal"
-            className="pill"
+            onClick={() => navigate(`/day/${dateKey}/meal/${m.id}/edit`)}
+            aria-label="Edit meal"
             style={{
               border: 0,
               background: 'var(--surface-2)',
@@ -208,10 +209,14 @@ function Timeline({ m, dateKey, last }: { m: Meal; dateKey: string; last: boolea
               height: 28,
               width: 28,
               padding: 0,
-              cursor: deleting ? 'wait' : 'pointer',
+              borderRadius: 999,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
             }}
           >
-            <Icon name="trash" size={13} color="var(--ink-3)" />
+            <Icon name="edit" size={13} color="var(--ink-3)" />
           </button>
         </div>
       </div>
@@ -220,7 +225,7 @@ function Timeline({ m, dateKey, last }: { m: Meal; dateKey: string; last: boolea
           const flags = flagItem(it)
           const flagged = flags.length > 0
           return (
-            <div key={i} className="col gap-3">
+            <div key={i} className="col gap-6">
               <div className="row spread aic" style={{ fontSize: 12.5, gap: 10 }}>
                 <div style={{ color: 'var(--ink-2)', fontWeight: 500, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {it.name}
@@ -229,14 +234,16 @@ function Timeline({ m, dateKey, last }: { m: Meal; dateKey: string; last: boolea
                   {it.kcal} <span className="muted" style={{ fontWeight: 500, fontSize: 11 }}>kcal</span>
                 </div>
               </div>
-              <div className="row spread aic" style={{ gap: 8 }}>
-                <div className="row gap-6" style={{ fontSize: 11, fontWeight: 700, fontVariantNumeric: 'tabular-nums', flexWrap: 'wrap' }}>
-                  <span style={{ color: 'color-mix(in oklch, var(--carbs), black 30%)' }}>{it.c_g}c</span>
-                  <span style={{ color: 'color-mix(in oklch, var(--protein), black 28%)' }}>{it.p_g}p</span>
-                  <span style={{ color: 'color-mix(in oklch, var(--fat), black 30%)' }}>{it.f_g}f</span>
-                  {flags.map((f) => <FlagChip key={f} flag={f} />)}
-                </div>
-                {flagged && (
+              <div className="row gap-6" style={{ fontSize: 11, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
+                <span style={{ color: 'color-mix(in oklch, var(--carbs), black 30%)' }}>{it.c_g}c</span>
+                <span style={{ color: 'color-mix(in oklch, var(--protein), black 28%)' }}>{it.p_g}p</span>
+                <span style={{ color: 'color-mix(in oklch, var(--fat), black 30%)' }}>{it.f_g}f</span>
+              </div>
+              {flagged && (
+                <div className="row spread aic" style={{ gap: 8 }}>
+                  <div className="row gap-6" style={{ flexWrap: 'wrap' }}>
+                    {flags.map((f) => <FlagChip key={f} flag={f} />)}
+                  </div>
                   <button
                     onClick={() => navigate(`/swaps/${dateKey}/${m.id}/${i}`)}
                     style={{
@@ -245,12 +252,13 @@ function Timeline({ m, dateKey, last }: { m: Meal; dateKey: string; last: boolea
                       fontSize: 10.5, fontWeight: 700, borderRadius: 999,
                       display: 'inline-flex', alignItems: 'center', gap: 4,
                       cursor: 'pointer',
+                      flexShrink: 0,
                     }}
                   >
                     <Icon name="sparkle" size={10} color="var(--accent)" /> Swap
                   </button>
-                )}
-              </div>
+                </div>
+              )}
             </div>
           )
         })}

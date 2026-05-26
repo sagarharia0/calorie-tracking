@@ -78,21 +78,28 @@
   --fat-2:    oklch(0.94 0.01 255);
 }
 
-/* Reset within app */
-.app, .app * {
-  box-sizing: border-box;
-  -webkit-font-smoothing: antialiased;
+/* Global resets — apply to every element so fonts + box-sizing are
+   consistent across SignIn, AuthGate, and the post-login app routes
+   (none of which share a common .app ancestor). */
+html {
   font-family: 'Inter', system-ui, sans-serif;
-}
-
-.app {
-  background: var(--bg);
-  color: var(--ink);
-  width: 100%;
-  height: 100%;
   font-size: 14px;
   letter-spacing: -0.005em;
   font-feature-settings: 'cv11', 'ss01', 'tnum' 0;
+  -webkit-font-smoothing: antialiased;
+  color: var(--ink);
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+/* .app is now just a layout container for the two screens that use it
+   (SignIn + AuthGate loading state) — fonts and resets come from html/*. */
+.app {
+  background: var(--bg);
+  width: 100%;
+  height: 100%;
 }
 
 .tnum { font-variant-numeric: tabular-nums; font-feature-settings: 'tnum'; }
@@ -277,8 +284,22 @@
   font-weight: 600;
   color: var(--ink);
   width: 100%;
+  min-width: 0; /* allow shrinking inside flex/grid cells smaller than intrinsic */
 }
 .input:focus { outline: none; border-color: var(--accent); background: #fff; }
+
+/* Hide number-input spinner controls. They inflate the input's intrinsic
+   width on Chromium (caused field overflow on Pixel 6) and the mobile
+   numeric keyboard handles increments better than tiny spinner arrows. */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
 
 .btn {
   height: 48px;

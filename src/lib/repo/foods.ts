@@ -29,7 +29,7 @@ export async function searchFoodsByPrefix(uid: string, prefix: string, n = 10): 
   const q = query(
     foodsCol(uid),
     where('nameLower', '>=', p),
-    where('nameLower', '<=', p + ''),
+    where('nameLower', '<=', p + ''),
     orderBy('nameLower'),
     limit(n),
   )

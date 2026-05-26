@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Icon, type IconName } from '../components/ui/Icon'
 import { TabBar } from '../components/ui/TabBar'
@@ -31,7 +31,7 @@ type SummaryState =
   | { phase: 'error'; message: string }
 
 export default function Insights() {
-  const { user } = useAuth()
+  const { user, diet } = useAuth()
   const navigate = useNavigate()
   const today = todayKey()
   const { days, loading: daysLoading } = useLast7Days(today)
@@ -97,6 +97,10 @@ export default function Insights() {
         f_g: goalGrams.f_g,
         weeklyUnitsTarget: todayGoal.weeklyUnitsTarget,
       },
+      // Filters the LLM's "biggest swap opportunity" card so a meat
+      // alternative isn't proposed to a vegetarian. Cache key also includes
+      // diet (below) so changing it busts the cached narrative.
+      ...(diet ? { diet } : {}),
     }
 
     // Content-hash cache. Same input → same output, no LLM call.
@@ -138,7 +142,7 @@ export default function Insights() {
     return () => {
       cancelled = true
     }
-  }, [daysLoading, todayGoal?.id, days, labels, user])
+  }, [daysLoading, todayGoal?.id, days, labels, user, diet])
 
   const within = useMemo(() => daysWithinKcal(days, goals), [days, goals])
   const hit = useMemo(() => daysHitMacros(days, goals), [days, goals])
@@ -175,72 +179,7 @@ export default function Insights() {
         </div>
 
         {/* Bar chart */}
-        <div className="card" style={{ marginBottom: 14 }}>
-          <div className="row spread aic" style={{ marginBottom: 14, gap: 8 }}>
-            <div style={{ fontWeight: 700, fontSize: 14, whiteSpace: 'nowrap' }}>Calories per day</div>
-            <div className="row gap-8" style={{ fontSize: 11, color: 'var(--ink-3)', fontWeight: 600, flexShrink: 0 }}>
-              <span className="row gap-4 aic"><span className="swatch" style={{ background: 'var(--carbs)' }} />C</span>
-              <span className="row gap-4 aic"><span className="swatch" style={{ background: 'var(--protein)' }} />P</span>
-              <span className="row gap-4 aic"><span className="swatch" style={{ background: 'var(--fat)' }} />F</span>
-            </div>
-          </div>
-          <div style={{ position: 'relative', height: 140, marginBottom: 10 }}>
-            <div style={{ position: 'absolute', left: 0, right: 0, top: `${(1 - goalKcal / max) * 100}%`, borderTop: '1.5px dashed var(--ink-4)', zIndex: 2 }}>
-              <span style={{ position: 'absolute', left: 0, top: -7, fontSize: 9.5, fontWeight: 700, color: 'var(--ink-3)', background: 'var(--card-bg)', padding: '0 4px', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
-                Goal
-              </span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, height: '100%' }}>
-              {days.map((b, i) => {
-                const t = b.day?.totals
-                const cKcal = (t?.c_g ?? 0) * 4
-                const pKcal = (t?.p_g ?? 0) * 4
-                const fKcal = (t?.f_g ?? 0) * 9
-                const total = cKcal + pKcal + fKcal
-                const h = total > 0 ? (total / max) * 100 : 0
-                return (
-                  <div key={i} className="col" style={{ flex: 1, alignItems: 'center', gap: 6, height: '100%', justifyContent: 'flex-end' }}>
-                    <div
-                      className="col-bar"
-                      style={{
-                        height: `${h}%`,
-                        width: '100%',
-                        background: 'transparent',
-                        display: 'flex',
-                        flexDirection: 'column-reverse',
-                        borderRadius: '6px 6px 0 0',
-                        overflow: 'hidden',
-                      }}
-                    >
-                      {total > 0 && (
-                        <>
-                          <span style={{ display: 'block', width: '100%', height: `${(cKcal / total) * 100}%`, background: 'var(--carbs)' }} />
-                          <span style={{ display: 'block', width: '100%', height: `${(pKcal / total) * 100}%`, background: 'var(--protein)' }} />
-                          <span style={{ display: 'block', width: '100%', height: `${(fKcal / total) * 100}%`, background: 'var(--fat)' }} />
-                        </>
-                      )}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-          <div className="row" style={{ display: 'flex', gap: 8 }}>
-            {days.map((b, i) => {
-              const dow = DOW_SHORT[new Date(b.date).getDay()]
-              const kcal = b.day?.totals.kcal ?? 0
-              const isToday = b.date === today
-              return (
-                <div key={i} className="col" style={{ flex: 1, alignItems: 'center', gap: 1 }}>
-                  <div className="tnum" style={{ fontSize: 11, fontWeight: 700, color: isToday ? 'var(--ink)' : 'var(--ink-3)' }}>{dow}</div>
-                  <div className="tnum" style={{ fontSize: 9.5, color: 'var(--ink-4)', fontWeight: 600 }}>
-                    {kcal > 0 ? `${Math.round(kcal / 100) / 10}k` : '—'}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </div>
+        <CaloriesChart days={days} goalKcal={goalKcal} max={max} today={today} />
 
         {/* By label */}
         {labelStats.length > 0 && (
@@ -456,6 +395,228 @@ export default function Insights() {
 
       <TabBar />
     </Screen>
+  )
+}
+
+type DayBundle = {
+  date: string
+  day: { totals: { kcal: number; c_g: number; p_g: number; f_g: number } } | null | undefined
+}
+
+// Calories-per-day bar chart with axes + tap tooltip.
+//
+// - Y axis: 0 baseline + the goal kcal label on the dashed reference line.
+// - X axis: dow letter + day-of-month under each bar.
+// - Each bar is a button. Tapping selects it and shows a small tooltip above
+//   with kcal + macro grams. Tapping the same bar again, another bar, or
+//   anywhere outside the chart dismisses or moves the tooltip.
+function CaloriesChart({
+  days,
+  goalKcal,
+  max,
+  today,
+}: {
+  days: DayBundle[]
+  goalKcal: number
+  max: number
+  today: string
+}) {
+  const [selected, setSelected] = useState<number | null>(null)
+  const chartRef = useRef<HTMLDivElement>(null)
+
+  // Outside-click dismiss. Use mousedown so it fires before the bar's onClick
+  // when tapping another bar — the tap target's own click handler still wins.
+  useEffect(() => {
+    if (selected === null) return
+    const onDown = (e: MouseEvent | TouchEvent) => {
+      if (!chartRef.current?.contains(e.target as Node)) {
+        setSelected(null)
+      }
+    }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('touchstart', onDown)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('touchstart', onDown)
+    }
+  }, [selected])
+
+  const goalY = `${(1 - goalKcal / max) * 100}%`
+  const yAxisW = 30 // gutter for "0" / "Goal" labels
+
+  return (
+    <div className="card" style={{ marginBottom: 14 }} ref={chartRef}>
+      <div className="row spread aic" style={{ marginBottom: 14, gap: 8 }}>
+        <div style={{ fontWeight: 700, fontSize: 14, whiteSpace: 'nowrap' }}>Calories per day</div>
+        <div className="row gap-8" style={{ fontSize: 11, color: 'var(--ink-3)', fontWeight: 600, flexShrink: 0 }}>
+          <span className="row gap-4 aic"><span className="swatch" style={{ background: 'var(--carbs)' }} />C</span>
+          <span className="row gap-4 aic"><span className="swatch" style={{ background: 'var(--protein)' }} />P</span>
+          <span className="row gap-4 aic"><span className="swatch" style={{ background: 'var(--fat)' }} />F</span>
+        </div>
+      </div>
+
+      <div style={{ position: 'relative', height: 150, marginBottom: 10, paddingLeft: yAxisW }}>
+        {/* Y-axis labels (left gutter) */}
+        <div
+          style={{
+            position: 'absolute',
+            left: 0,
+            top: 0,
+            bottom: 0,
+            width: yAxisW - 4,
+            pointerEvents: 'none',
+            fontSize: 9.5,
+            fontWeight: 700,
+            color: 'var(--ink-3)',
+            letterSpacing: '0.04em',
+            textTransform: 'uppercase',
+          }}
+        >
+          <span
+            className="tnum"
+            style={{
+              position: 'absolute',
+              left: 0,
+              top: goalY,
+              transform: 'translateY(-50%)',
+              color: 'var(--ink-2)',
+            }}
+          >
+            {goalKcal.toLocaleString()}
+          </span>
+          <span style={{ position: 'absolute', left: 0, bottom: -4 }}>0</span>
+        </div>
+
+        {/* Goal reference line (dashed, spans the plot area) */}
+        <div
+          style={{
+            position: 'absolute',
+            left: yAxisW,
+            right: 0,
+            top: goalY,
+            borderTop: '1.5px dashed var(--ink-4)',
+            zIndex: 2,
+            pointerEvents: 'none',
+          }}
+        />
+
+        {/* Bars */}
+        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, height: '100%' }}>
+          {days.map((b, i) => {
+            const t = b.day?.totals
+            const kcal = t?.kcal ?? 0
+            const cKcal = (t?.c_g ?? 0) * 4
+            const pKcal = (t?.p_g ?? 0) * 4
+            const fKcal = (t?.f_g ?? 0) * 9
+            const totalK = cKcal + pKcal + fKcal
+            const h = totalK > 0 ? (totalK / max) * 100 : 0
+            const isSelected = selected === i
+            return (
+              <button
+                key={i}
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setSelected((prev) => (prev === i ? null : i))
+                }}
+                aria-label={`${DOW_SHORT[new Date(b.date).getDay()]} ${kcal} kcal`}
+                style={{
+                  flex: 1,
+                  height: '100%',
+                  display: 'flex',
+                  flexDirection: 'column-reverse',
+                  alignItems: 'center',
+                  border: 0,
+                  background: 'transparent',
+                  padding: 0,
+                  cursor: kcal > 0 ? 'pointer' : 'default',
+                }}
+              >
+                <div
+                  style={{
+                    height: `${h}%`,
+                    width: '100%',
+                    display: 'flex',
+                    flexDirection: 'column-reverse',
+                    borderRadius: '6px 6px 0 0',
+                    overflow: 'hidden',
+                    outline: isSelected ? '2px solid var(--ink)' : 'none',
+                    outlineOffset: 1,
+                  }}
+                >
+                  {totalK > 0 && (
+                    <>
+                      <span style={{ display: 'block', width: '100%', height: `${(cKcal / totalK) * 100}%`, background: 'var(--carbs)' }} />
+                      <span style={{ display: 'block', width: '100%', height: `${(pKcal / totalK) * 100}%`, background: 'var(--protein)' }} />
+                      <span style={{ display: 'block', width: '100%', height: `${(fKcal / totalK) * 100}%`, background: 'var(--fat)' }} />
+                    </>
+                  )}
+                </div>
+              </button>
+            )
+          })}
+        </div>
+
+        {/* Tooltip over the selected bar */}
+        {selected !== null && (() => {
+          const b = days[selected]
+          const t = b?.day?.totals
+          if (!t) return null
+          const d = new Date(b.date)
+          const dateStr = `${DOW_SHORT[d.getDay()]} ${d.getDate()}`
+          // Position the tooltip horizontally over the centre of the selected
+          // bar. Bars share remaining width equally with 8px gaps between, so
+          // the centre of bar i sits at: yAxisW + (plotW * (i + 0.5) / days.length).
+          // Using percent of the plot area keeps it responsive.
+          const leftPct = ((selected + 0.5) / days.length) * 100
+          return (
+            <div
+              role="tooltip"
+              style={{
+                position: 'absolute',
+                left: `calc(${yAxisW}px + (100% - ${yAxisW}px) * ${leftPct / 100})`,
+                bottom: '100%',
+                transform: 'translate(-50%, -6px)',
+                background: 'var(--ink)',
+                color: '#fff',
+                padding: '8px 10px',
+                borderRadius: 8,
+                fontSize: 11.5,
+                lineHeight: 1.35,
+                whiteSpace: 'nowrap',
+                pointerEvents: 'none',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.18)',
+                zIndex: 3,
+              }}
+            >
+              <div style={{ fontWeight: 700, marginBottom: 2 }}>
+                {dateStr} · {t.kcal.toLocaleString()} kcal
+              </div>
+              <div style={{ opacity: 0.85, fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>
+                {t.c_g}c · {t.p_g}p · {t.f_g}f
+              </div>
+            </div>
+          )
+        })()}
+      </div>
+
+      {/* X-axis day labels */}
+      <div className="row" style={{ display: 'flex', gap: 8, paddingLeft: yAxisW }}>
+        {days.map((b, i) => {
+          const d = new Date(b.date)
+          const dow = DOW_SHORT[d.getDay()]
+          const isToday = b.date === today
+          return (
+            <div key={i} className="col" style={{ flex: 1, alignItems: 'center', gap: 1 }}>
+              <div className="tnum" style={{ fontSize: 11, fontWeight: 700, color: isToday ? 'var(--ink)' : 'var(--ink-3)' }}>{dow}</div>
+              <div className="tnum" style={{ fontSize: 10, color: 'var(--ink-4)', fontWeight: 600 }}>
+                {d.getDate()}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
   )
 }
 

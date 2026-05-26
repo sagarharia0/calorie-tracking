@@ -1,6 +1,6 @@
 import { httpsCallable } from 'firebase/functions'
 import { functions } from './firebase'
-import type { FoodKind, MealItem, MealType } from '../types/firestore'
+import type { Diet, FoodKind, MealItem, MealType } from '../types/firestore'
 
 // Mirrored from functions/src/swap.ts. The function is the source of truth
 // for the SwapTag enum and SwapSuggestion shape — this file is the typed
@@ -30,6 +30,7 @@ export type RequestSwapsInput = {
     remainingKcal: number
     goalGrams: { c_g: number; p_g: number; f_g: number }
   }
+  diet?: Diet
 }
 
 export type RequestSwapsOutput = {
@@ -76,6 +77,7 @@ export type SuggestFoodsInput = {
   remainingKcal?: number
   goalGrams?: { c_g: number; p_g: number; f_g: number }
   preferKind?: FoodKind | 'any'
+  diet?: Diet
 }
 
 export type SuggestFoodsOutput = {
@@ -125,6 +127,7 @@ export type SwapOpportunity = {
 export type InsightSummaryInput = {
   days: InsightDaySummary[]
   goal: { kcal: number; c_g: number; p_g: number; f_g: number; weeklyUnitsTarget?: number }
+  diet?: Diet
 }
 
 export type InsightSummaryOutput = {

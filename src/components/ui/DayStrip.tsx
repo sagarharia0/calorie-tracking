@@ -1,13 +1,24 @@
 import { MacroRing } from './MacroRing'
-import type { WeekDay } from '../../data/mock'
+
+// One cell of the 7-day strip on Home. Macros (c/p/f) are in grams.
+export type WeekDay = {
+  dow: string
+  num: number
+  date: string
+  kcal: number
+  c: number
+  p: number
+  f: number
+}
 
 type Props = {
   days: WeekDay[]
   todayIdx: number
   goal?: number
+  onPick?: (day: WeekDay) => void
 }
 
-export function DayStrip({ days, todayIdx, goal = 2200 }: Props) {
+export function DayStrip({ days, todayIdx, goal = 2200, onPick }: Props) {
   return (
     <div className="day-strip">
       {days.map((day, i) => {
@@ -15,8 +26,24 @@ export function DayStrip({ days, todayIdx, goal = 2200 }: Props) {
         const future = i > todayIdx
         const within = !future && day.kcal > 0 && day.kcal <= goal
         const over = !future && day.kcal > goal
+        const interactive = !!onPick && !future
         return (
-          <div key={i} className={`day-cell-ring${isToday ? ' is-today' : ''}`}>
+          <button
+            key={i}
+            type="button"
+            className={`day-cell-ring${isToday ? ' is-today' : ''}`}
+            onClick={interactive ? () => onPick!(day) : undefined}
+            disabled={!interactive}
+            aria-label={`View ${day.dow} ${day.num}`}
+            style={{
+              border: 0,
+              background: 'transparent',
+              padding: 0,
+              cursor: interactive ? 'pointer' : 'default',
+              font: 'inherit',
+              color: 'inherit',
+            }}
+          >
             <div
               className="dow"
               style={{
@@ -81,7 +108,7 @@ export function DayStrip({ days, todayIdx, goal = 2200 }: Props) {
                 />
               )}
             </div>
-          </div>
+          </button>
         )
       })}
     </div>

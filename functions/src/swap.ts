@@ -2,6 +2,8 @@ import { onCall, HttpsError } from 'firebase-functions/v2/https'
 import { defineSecret } from 'firebase-functions/params'
 import { logger } from 'firebase-functions/v2'
 import Anthropic from '@anthropic-ai/sdk'
+import { requireAllowedUser } from './auth'
+import { dietSystemSuffix, type Diet } from './diet'
 
 const ANTHROPIC_API_KEY = defineSecret('ANTHROPIC_API_KEY')
 
@@ -33,6 +35,7 @@ type RequestSwapsInput = {
     remainingKcal: number
     goalGrams: { c_g: number; p_g: number; f_g: number }
   }
+  diet?: Diet
 }
 
 type SwapSuggestion = {
@@ -128,9 +131,7 @@ export const requestSwaps = onCall(
     memory: '512MiB',
   },
   async (request): Promise<RequestSwapsOutput> => {
-    if (!request.auth) {
-      throw new HttpsError('unauthenticated', 'Sign in required.')
-    }
+    requireAllowedUser(request)
 
     const input = request.data as RequestSwapsInput
     if (!input?.item?.name || typeof input.item.kcal !== 'number') {
@@ -144,7 +145,7 @@ export const requestSwaps = onCall(
       response = await client.messages.create({
         model: 'claude-opus-4-7',
         max_tokens: 1500,
-        system: SYSTEM_PROMPT,
+        system: SYSTEM_PROMPT + dietSystemSuffix(input.diet),
         tools: [PROPOSE_SWAPS_TOOL],
         tool_choice: { type: 'tool', name: 'propose_swaps' },
         messages: [{ role: 'user', content: buildUserPrompt(input) }],

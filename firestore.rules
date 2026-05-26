@@ -3,8 +3,19 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // Email allowlist — single-tenant personal app. Add an email here AND
+    // mirror in functions/src/auth.ts ALLOWED_EMAILS to grant a new user.
+    function allowedEmail() {
+      return request.auth != null
+             && request.auth.token.email in [
+               'sagarharia@gmail.com',
+             ];
+    }
+
     function isOwner(uid) {
-      return request.auth != null && request.auth.uid == uid;
+      return request.auth != null
+             && request.auth.uid == uid
+             && allowedEmail();
     }
 
     match /users/{uid} {

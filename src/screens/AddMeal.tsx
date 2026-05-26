@@ -1,14 +1,14 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { Timestamp } from 'firebase/firestore'
 import { Icon, type IconName } from '../components/ui/Icon'
 import { Screen } from '../components/ui/Screen'
 import { FoodPicker } from '../components/forms/FoodPicker'
 import { useAuth } from '../contexts/AuthContext'
-import { addMeal } from '../lib/repo/meals'
+import { addMeal, deleteMeal, getMeal, updateMeal } from '../lib/repo/meals'
 import { addFood, bumpFoodUse } from '../lib/repo/foods'
-import { todayKey, parseKey } from '../lib/dateKey'
-import type { AmountUnit, Food, MealItem, MealType } from '../types/firestore'
+import { todayKey, formatShortDate } from '../lib/dateKey'
+import type { AmountUnit, Food, Meal, MealItem, MealType } from '../types/firestore'
 
 const MEAL_TYPES: { type: MealType; icon: IconName }[] = [
   { type: 'Breakfast', icon: 'sun' },
@@ -41,7 +41,7 @@ const emptyDraft = (): ItemDraft => ({
   c_g: '',
   p_g: '',
   f_g: '',
-  saveAsFood: false,
+  saveAsFood: true,
 })
 
 // Prefill shape passed by Scanner via router state.
@@ -65,6 +65,21 @@ const prefillToDraft = (p: Prefill): ItemDraft => ({
   p_g: String(Math.round(p.p_g)),
   f_g: String(Math.round(p.f_g)),
   barcode: p.barcode,
+  saveAsFood: true,
+})
+
+// Hydrate a draft from an already-saved MealItem (edit mode). Macros are
+// already in their final form so they round-trip directly into the inputs.
+const itemToDraft = (it: MealItem): ItemDraft => ({
+  name: it.name,
+  amount: String(it.amount),
+  unit: it.unit,
+  kcal: String(it.kcal),
+  c_g: String(it.c_g),
+  p_g: String(it.p_g),
+  f_g: String(it.f_g),
+  foodId: it.foodId,
+  barcode: it.barcode,
   saveAsFood: false,
 })
 
@@ -80,23 +95,73 @@ const toNum = (s: string) => {
 // Round to 1 decimal place; Firestore is fine with floats but keeps the doc readable.
 const round1 = (n: number) => Math.round(n * 10) / 10
 
+// Time-of-day → most likely meal type. Used to pre-select the meal-type pill
+// when AddMeal opens (especially relevant for the scanner-first flow).
+function defaultMealTypeForNow(): MealType {
+  const h = new Date().getHours()
+  if (h >= 5 && h < 11) return 'Breakfast'
+  if (h >= 11 && h < 15) return 'Lunch'
+  if (h >= 17 && h < 21) return 'Dinner'
+  return 'Snack'
+}
+
 export default function AddMeal() {
   const { user } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
-  const { date } = useParams()
+  const { date, mealId } = useParams()
   const dateKey = date ?? todayKey()
+  const isEdit = !!mealId
 
-  // Prefill from Scanner (router state) seeds the first item row.
-  const prefill = (location.state as { prefill?: Prefill } | null)?.prefill
+  // Prefill from Scanner (router state). Accepts either a single Prefill
+  // (legacy single-scan callers) or an array of them (multi-scan from Scanner).
+  const rawPrefill = (location.state as { prefill?: Prefill | Prefill[] } | null)?.prefill
+  const prefillArr: Prefill[] = Array.isArray(rawPrefill)
+    ? rawPrefill
+    : rawPrefill
+      ? [rawPrefill]
+      : []
 
-  const [type, setType] = useState<MealType>('Snack')
+  const [type, setType] = useState<MealType>(() => defaultMealTypeForNow())
   const [items, setItems] = useState<ItemDraft[]>(() =>
-    prefill ? [prefillToDraft(prefill)] : [emptyDraft()],
+    prefillArr.length > 0 ? prefillArr.map(prefillToDraft) : [emptyDraft()],
   )
   const [focusIdx, setFocusIdx] = useState<number | null>(null)
   const [saving, setSaving] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  // Edit mode: hold the loaded meal's original time + alcohol so they
+  // round-trip on save (we don't want editing macros to overwrite the
+  // logged time, and alcohol_g is preserved from the original record).
+  const [editLoaded, setEditLoaded] = useState<Meal | null>(null)
+  const [loadingMeal, setLoadingMeal] = useState(isEdit)
+
+  useEffect(() => {
+    if (!isEdit || !user || !mealId) return
+    let cancelled = false
+    setLoadingMeal(true)
+    getMeal(user.uid, dateKey, mealId)
+      .then((m) => {
+        if (cancelled) return
+        if (!m) {
+          setErr('Meal not found')
+          setLoadingMeal(false)
+          return
+        }
+        setEditLoaded(m)
+        setType(m.type)
+        setItems(m.items.length > 0 ? m.items.map(itemToDraft) : [emptyDraft()])
+        setLoadingMeal(false)
+      })
+      .catch((e) => {
+        if (cancelled) return
+        setErr(e instanceof Error ? e.message : 'Failed to load meal')
+        setLoadingMeal(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [isEdit, user?.uid, mealId, dateKey])
 
   const updateItem = (idx: number, patch: Partial<ItemDraft>) =>
     setItems((prev) => prev.map((it, i) => (i === idx ? { ...it, ...patch } : it)))
@@ -156,7 +221,12 @@ export default function AddMeal() {
     { kcal: 0, c_g: 0, p_g: 0, f_g: 0 },
   )
 
-  const canSave = !saving && parsedItems.length > 0 && totals.kcal > 0 && !!user
+  const canSave =
+    !saving && !deleting && !loadingMeal && parsedItems.length > 0 && totals.kcal > 0 && !!user
+
+  const goBackAfterWrite = () => {
+    navigate(dateKey === todayKey() ? '/' : `/day/${dateKey}`)
+  }
 
   const onSave = async () => {
     if (!user || !canSave) return
@@ -216,15 +286,30 @@ export default function AddMeal() {
         }
       }
 
-      await addMeal(user.uid, dateKey, {
-        type,
-        time: Timestamp.now(),
-        kcal: totals.kcal,
-        c_g: totals.c_g,
-        p_g: totals.p_g,
-        f_g: totals.f_g,
-        items: itemsToWrite,
-      })
+      if (isEdit && editLoaded) {
+        // Preserve the original logged time + alcohol_g — editing macros
+        // should not silently shift when the meal was eaten.
+        await updateMeal(user.uid, dateKey, editLoaded.id, {
+          type,
+          time: editLoaded.time,
+          kcal: totals.kcal,
+          c_g: totals.c_g,
+          p_g: totals.p_g,
+          f_g: totals.f_g,
+          items: itemsToWrite,
+          ...(editLoaded.alcohol_g !== undefined ? { alcohol_g: editLoaded.alcohol_g } : {}),
+        })
+      } else {
+        await addMeal(user.uid, dateKey, {
+          type,
+          time: Timestamp.now(),
+          kcal: totals.kcal,
+          c_g: totals.c_g,
+          p_g: totals.p_g,
+          f_g: totals.f_g,
+          items: itemsToWrite,
+        })
+      }
 
       // Pre-existing foodIds: bump useCount + lastUsedAt.
       // Newly created foods already have useCount 1 from addFood.
@@ -232,18 +317,28 @@ export default function AddMeal() {
         await bumpFoodUse(user.uid, id)
       }
 
-      navigate(dateKey === todayKey() ? '/' : `/day/${dateKey}`)
+      goBackAfterWrite()
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Failed to save meal')
       setSaving(false)
     }
   }
 
-  const dateObj = parseKey(dateKey)
-  const dateLabel =
-    dateKey === todayKey()
-      ? 'Today'
-      : dateObj.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
+  const onDelete = async () => {
+    if (!user || !isEdit || !editLoaded || deleting || saving) return
+    if (!window.confirm(`Delete this ${editLoaded.type} (${editLoaded.kcal} kcal)?`)) return
+    setDeleting(true)
+    setErr(null)
+    try {
+      await deleteMeal(user.uid, dateKey, editLoaded.id)
+      goBackAfterWrite()
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Failed to delete meal')
+      setDeleting(false)
+    }
+  }
+
+  const dateLabel = dateKey === todayKey() ? 'Today' : formatShortDate(dateKey)
 
   return (
     <Screen label="Add meal">
@@ -256,7 +351,7 @@ export default function AddMeal() {
           <Icon name="back" size={18} />
         </button>
         <div className="col aic" style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: 16, fontWeight: 700 }}>Log meal</div>
+          <div style={{ fontSize: 16, fontWeight: 700 }}>{isEdit ? 'Edit meal' : 'Log meal'}</div>
           <div style={{ fontSize: 11, color: 'var(--ink-3)', fontWeight: 600 }}>{dateLabel}</div>
         </div>
         <button
@@ -273,7 +368,7 @@ export default function AddMeal() {
             cursor: canSave ? 'pointer' : 'not-allowed',
           }}
         >
-          {saving ? 'Saving…' : 'Save'}
+          {saving ? 'Saving…' : isEdit ? 'Update' : 'Save'}
         </button>
       </div>
 
@@ -384,6 +479,30 @@ export default function AddMeal() {
             <span className="pill chip-fat" style={{ height: 22, fontSize: 11.5 }}>{totals.f_g}g F</span>
           </div>
         </div>
+
+        {isEdit && editLoaded && (
+          <button
+            onClick={onDelete}
+            disabled={deleting || saving}
+            className="row gap-8 aic"
+            style={{
+              marginTop: 14,
+              width: '100%',
+              justifyContent: 'center',
+              border: '1px solid var(--hairline)',
+              background: 'var(--surface)',
+              color: 'var(--danger)',
+              padding: '12px 14px',
+              borderRadius: 14,
+              fontSize: 13,
+              fontWeight: 700,
+              cursor: deleting || saving ? 'not-allowed' : 'pointer',
+            }}
+          >
+            <Icon name="trash" size={14} color="var(--danger)" />
+            {deleting ? 'Deleting…' : 'Delete meal'}
+          </button>
+        )}
       </div>
     </Screen>
   )
@@ -474,8 +593,18 @@ function ItemRow({
         </div>
       )}
 
-      <div className="row gap-8" style={{ marginTop: 12, marginBottom: 10 }}>
-        <div className="col" style={{ flex: 1 }}>
+      {/* Amount + Unit: 2-col grid. min-width:0 keeps inputs from forcing
+          column overflow when their intrinsic content is wider than the cell. */}
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: '1fr 1fr',
+          gap: 8,
+          marginTop: 12,
+          marginBottom: 10,
+        }}
+      >
+        <div className="col" style={{ minWidth: 0 }}>
           <FieldLabel>Amount</FieldLabel>
           <input
             type="number"
@@ -488,7 +617,7 @@ function ItemRow({
             className="input"
           />
         </div>
-        <div className="col" style={{ flex: 1 }}>
+        <div className="col" style={{ minWidth: 0 }}>
           <FieldLabel>Unit</FieldLabel>
           <select
             value={draft.unit}
@@ -505,7 +634,9 @@ function ItemRow({
         </div>
       </div>
 
-      <div className="row gap-8" style={{ flexWrap: 'wrap' }}>
+      {/* kcal + macros: 2-col grid that wraps to a 2x2 layout deterministically
+          (avoids Chromium's intrinsic min-content on number inputs spilling). */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
         <NumField label="kcal" value={draft.kcal} onChange={(v) => onChange({ kcal: v })} />
         <NumField label="Carbs (g)" value={draft.c_g} onChange={(v) => onChange({ c_g: v })} />
         <NumField label="Protein (g)" value={draft.p_g} onChange={(v) => onChange({ p_g: v })} />
@@ -572,7 +703,7 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
 
 function NumField({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
   return (
-    <div className="col" style={{ flex: '1 1 calc(50% - 4px)', minWidth: 100 }}>
+    <div className="col" style={{ minWidth: 0 }}>
       <FieldLabel>{label}</FieldLabel>
       <input
         type="number"
